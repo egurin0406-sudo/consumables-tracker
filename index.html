@@ -52,34 +52,22 @@
     <form id="item-form">
       <label>
         名前
-        <input type="text" id="f-name" required placeholder="例: コンタクトレンズ">
-      </label>
-
-      <label>
-        交換サイクル
-        <div class="cycle-presets">
-          <button type="button" class="preset-btn" data-days="7">1週間</button>
-          <button type="button" class="preset-btn" data-days="14">2週間</button>
-          <button type="button" class="preset-btn" data-days="30">1ヶ月</button>
-          <button type="button" class="preset-btn" data-days="90">3ヶ月</button>
-          <button type="button" class="preset-btn" data-days="180">6ヶ月</button>
-          <button type="button" class="preset-btn" data-days="365">1年</button>
-        </div>
-        <div class="custom-days">
-          <input type="number" id="f-cycle" min="1" required placeholder="日数">
-          <span>日ごと</span>
-        </div>
-      </label>
-
-      <label>
-        最終交換日
-        <input type="date" id="f-last-date" required>
+        <input type="text" id="f-name" required>
       </label>
 
       <label>
         メモ (任意)
-        <input type="text" id="f-note" placeholder="例: 右目用">
+        <input type="text" id="f-note">
       </label>
+
+      <div class="records-section">
+        <span class="records-label">記録日</span>
+        <ul id="records-list" class="records-list"></ul>
+        <div class="add-record-row">
+          <input type="date" id="f-new-record-date">
+          <button type="button" id="btn-add-record" class="btn-secondary">追加</button>
+        </div>
+      </div>
 
       <div class="modal-actions">
         <button type="button" id="btn-delete" class="btn-danger hidden">削除</button>

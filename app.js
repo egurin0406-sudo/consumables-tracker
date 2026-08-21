@@ -1,7 +1,7 @@
 (() => {
-  const STORAGE_KEY = 'consumables-v1';
+  const STORAGE_KEY = 'consumables-v2';
 
-  /** @typedef {{id:string, name:string, cycleDays:number, lastReplacedDate:string, note:string}} Item */
+  /** @typedef {{id:string, name:string, note:string, records:string[]}} Item */
 
   /** @returns {Item[]} */
   function loadItems() {
@@ -19,6 +19,7 @@
 
   let items = loadItems();
   let editingId = null;
+  let modalRecords = [];
 
   // ---- 日付ユーティリティ ----
   function toDateOnly(d) {
@@ -49,22 +50,47 @@
     return Math.round((toDateOnly(a) - toDateOnly(b)) / 86400000);
   }
 
-  function nextDateOf(item) {
-    return addDays(parseISODate(item.lastReplacedDate), item.cycleDays);
+  // ---- 記録から統計を計算 ----
+  function computeStats(records) {
+    if (!records || records.length === 0) {
+      return { lastDate: null, avgCycle: null, nextDate: null };
+    }
+    const sorted = [...records].sort();
+    const lastDateStr = sorted[sorted.length - 1];
+    if (sorted.length < 2) {
+      return { lastDate: lastDateStr, avgCycle: null, nextDate: null };
+    }
+    let total = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      total += diffDays(parseISODate(sorted[i]), parseISODate(sorted[i - 1]));
+    }
+    const avgCycle = Math.max(1, Math.round(total / (sorted.length - 1)));
+    const nextDate = addDays(parseISODate(lastDateStr), avgCycle);
+    return { lastDate: lastDateStr, avgCycle, nextDate };
   }
 
-  function statusOf(item) {
-    const remain = diffDays(nextDateOf(item), todayDateOnly());
+  function statusOf(stats) {
+    if (!stats.nextDate) return 'unknown';
+    const remain = diffDays(stats.nextDate, todayDateOnly());
     if (remain < 0) return 'overdue';
     if (remain <= 3) return 'soon';
     return 'ok';
   }
 
-  function statusLabel(item) {
-    const remain = diffDays(nextDateOf(item), todayDateOnly());
-    if (remain < 0) return `期限切れ (${Math.abs(remain)}日超過)`;
-    if (remain === 0) return '本日が交換日';
+  function statusLabel(stats) {
+    if (!stats.nextDate) {
+      return stats.lastDate ? '記録を増やすと次回予測が表示されます' : '記録がありません';
+    }
+    const remain = diffDays(stats.nextDate, todayDateOnly());
+    if (remain < 0) return `目安を${Math.abs(remain)}日超過`;
+    if (remain === 0) return '本日が目安日';
     return `あと${remain}日`;
+  }
+
+  function recordsSummary(stats, count) {
+    let s = `記録${count}件`;
+    if (stats.avgCycle) s += `・平均${stats.avgCycle}日ごと`;
+    return s;
   }
 
   // ---- タブ切り替え ----
@@ -85,12 +111,21 @@
   const emptyStateEl = document.getElementById('empty-state');
 
   function renderList() {
-    const sorted = [...items].sort((a, b) => nextDateOf(a) - nextDateOf(b));
+    const withStats = items.map(item => ({ item, stats: computeStats(item.records) }));
+    withStats.sort((a, b) => {
+      const an = a.stats.nextDate ? a.stats.nextDate.getTime() : Infinity;
+      const bn = b.stats.nextDate ? b.stats.nextDate.getTime() : Infinity;
+      if (an !== bn) return an - bn;
+      const al = a.stats.lastDate ?? '';
+      const bl = b.stats.lastDate ?? '';
+      return bl.localeCompare(al);
+    });
+
     listEl.innerHTML = '';
     emptyStateEl.classList.toggle('hidden', items.length > 0);
 
-    for (const item of sorted) {
-      const status = statusOf(item);
+    for (const { item, stats } of withStats) {
+      const status = statusOf(stats);
       const li = document.createElement('li');
       li.className = `item-card status-${status}`;
 
@@ -98,18 +133,19 @@
       main.className = 'item-main';
       main.innerHTML = `
         <div class="item-name">${escapeHtml(item.name)}</div>
-        <div class="item-sub">${item.cycleDays}日ごと・前回 ${formatDisplayDate(parseISODate(item.lastReplacedDate))}${item.note ? ' ・ ' + escapeHtml(item.note) : ''}</div>
-        <div class="item-status">次回 ${formatDisplayDate(nextDateOf(item))}（${statusLabel(item)}）</div>
+        <div class="item-sub">${recordsSummary(stats, item.records.length)}${item.note ? ' ・ ' + escapeHtml(item.note) : ''}</div>
+        <div class="item-status">${stats.nextDate ? '次回目安 ' + formatDisplayDate(stats.nextDate) + '（' + statusLabel(stats) + '）' : statusLabel(stats)}</div>
       `;
 
       const actions = document.createElement('div');
       actions.className = 'item-actions';
 
-      const replaceBtn = document.createElement('button');
-      replaceBtn.className = 'btn-replace';
-      replaceBtn.textContent = '交換した';
-      replaceBtn.addEventListener('click', () => {
-        item.lastReplacedDate = formatISODate(todayDateOnly());
+      const recordBtn = document.createElement('button');
+      recordBtn.className = 'btn-replace';
+      recordBtn.textContent = '記録する';
+      recordBtn.addEventListener('click', () => {
+        const t = formatISODate(todayDateOnly());
+        if (!item.records.includes(t)) item.records.push(t);
         saveItems(items);
         renderList();
       });
@@ -119,7 +155,7 @@
       editBtn.textContent = '編集';
       editBtn.addEventListener('click', () => openModal(item));
 
-      actions.append(replaceBtn, editBtn);
+      actions.append(recordBtn, editBtn);
       li.append(main, actions);
       listEl.appendChild(li);
     }
@@ -136,21 +172,50 @@
   const modalTitle = document.getElementById('modal-title');
   const itemForm = document.getElementById('item-form');
   const fName = document.getElementById('f-name');
-  const fCycle = document.getElementById('f-cycle');
-  const fLastDate = document.getElementById('f-last-date');
   const fNote = document.getElementById('f-note');
-  const presetBtns = document.querySelectorAll('.preset-btn');
+  const recordsListEl = document.getElementById('records-list');
+  const fNewRecordDate = document.getElementById('f-new-record-date');
+  const btnAddRecord = document.getElementById('btn-add-record');
   const deleteBtn = document.getElementById('btn-delete');
+
+  function renderModalRecords() {
+    recordsListEl.innerHTML = '';
+    const sorted = [...modalRecords].sort().reverse();
+    if (sorted.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'records-empty';
+      li.textContent = '記録がありません';
+      recordsListEl.appendChild(li);
+      return;
+    }
+    for (const dateStr of sorted) {
+      const li = document.createElement('li');
+      li.className = 'record-row';
+      const span = document.createElement('span');
+      span.textContent = formatDisplayDate(parseISODate(dateStr));
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'record-del';
+      delBtn.textContent = '×';
+      delBtn.setAttribute('aria-label', `${span.textContent}の記録を削除`);
+      delBtn.addEventListener('click', () => {
+        modalRecords = modalRecords.filter(d => d !== dateStr);
+        renderModalRecords();
+      });
+      li.append(span, delBtn);
+      recordsListEl.appendChild(li);
+    }
+  }
 
   function openModal(item) {
     editingId = item ? item.id : null;
     modalTitle.textContent = item ? '消耗品を編集' : '消耗品を追加';
     fName.value = item ? item.name : '';
-    fCycle.value = item ? item.cycleDays : '';
-    fLastDate.value = item ? item.lastReplacedDate : formatISODate(todayDateOnly());
     fNote.value = item ? item.note || '' : '';
+    modalRecords = item ? [...item.records] : [formatISODate(todayDateOnly())];
+    fNewRecordDate.value = formatISODate(todayDateOnly());
     deleteBtn.classList.toggle('hidden', !item);
-    presetBtns.forEach(b => b.classList.toggle('selected', item && Number(b.dataset.days) === item.cycleDays));
+    renderModalRecords();
     modalOverlay.classList.remove('hidden');
     fName.focus();
   }
@@ -158,7 +223,7 @@
   function closeModal() {
     modalOverlay.classList.add('hidden');
     itemForm.reset();
-    presetBtns.forEach(b => b.classList.remove('selected'));
+    modalRecords = [];
     editingId = null;
   }
 
@@ -168,36 +233,29 @@
     if (e.target === modalOverlay) closeModal();
   });
 
-  presetBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      presetBtns.forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      fCycle.value = btn.dataset.days;
-    });
-  });
-
-  fCycle.addEventListener('input', () => {
-    presetBtns.forEach(b => b.classList.toggle('selected', Number(b.dataset.days) === Number(fCycle.value)));
+  btnAddRecord.addEventListener('click', () => {
+    const val = fNewRecordDate.value || formatISODate(todayDateOnly());
+    if (!modalRecords.includes(val)) {
+      modalRecords.push(val);
+      renderModalRecords();
+    }
   });
 
   itemForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const cycleDays = Number(fCycle.value);
-    if (!fName.value.trim() || !cycleDays || cycleDays < 1 || !fLastDate.value) return;
+    if (!fName.value.trim()) return;
 
     if (editingId) {
       const item = items.find(i => i.id === editingId);
       item.name = fName.value.trim();
-      item.cycleDays = cycleDays;
-      item.lastReplacedDate = fLastDate.value;
       item.note = fNote.value.trim();
+      item.records = [...modalRecords];
     } else {
       items.push({
         id: crypto.randomUUID(),
         name: fName.value.trim(),
-        cycleDays,
-        lastReplacedDate: fLastDate.value,
         note: fNote.value.trim(),
+        records: [...modalRecords],
       });
     }
     saveItems(items);
@@ -220,6 +278,8 @@
   let calYear = todayDateOnly().getFullYear();
   let calMonth = todayDateOnly().getMonth();
   let selectedDateStr = null;
+  let calPredictedIndex = {};
+  let calRecordedIndex = {};
 
   const calTitle = document.getElementById('cal-title');
   const calGrid = document.getElementById('calendar-grid');
@@ -236,13 +296,29 @@
     renderCalendar();
   });
 
-  function itemsDueOn(dateStr) {
-    return items.filter(i => formatISODate(nextDateOf(i)) === dateStr);
+  function buildCalendarIndex() {
+    const predicted = {};
+    const recorded = {};
+    for (const item of items) {
+      const stats = computeStats(item.records);
+      if (stats.nextDate) {
+        const key = formatISODate(stats.nextDate);
+        (predicted[key] ??= []).push(item);
+      }
+      for (const r of item.records) {
+        (recorded[r] ??= []).push(item);
+      }
+    }
+    return { predicted, recorded };
   }
 
   function renderCalendar() {
     calTitle.textContent = `${calYear}年${calMonth + 1}月`;
     calGrid.innerHTML = '';
+
+    const { predicted, recorded } = buildCalendarIndex();
+    calPredictedIndex = predicted;
+    calRecordedIndex = recorded;
 
     const firstDay = new Date(calYear, calMonth, 1);
     const startWeekday = firstDay.getDay();
@@ -262,11 +338,15 @@
       if (dateStr === todayStr) cell.classList.add('today');
       if (dateStr === selectedDateStr) cell.classList.add('selected');
 
-      const dueItems = itemsDueOn(dateStr);
       cell.innerHTML = `<span>${day}</span>`;
-      if (dueItems.length > 0) {
+      if (predicted[dateStr]) {
         const dot = document.createElement('div');
-        dot.className = 'cal-dot';
+        dot.className = 'cal-dot cal-dot-predicted';
+        cell.appendChild(dot);
+      }
+      if (recorded[dateStr]) {
+        const dot = document.createElement('div');
+        dot.className = 'cal-dot cal-dot-history';
         cell.appendChild(dot);
       }
 
@@ -283,17 +363,22 @@
   }
 
   function showDayDetail(dateStr) {
-    const dueItems = itemsDueOn(dateStr);
-    const d = parseISODate(dateStr);
-    if (dueItems.length === 0) {
+    const predictedItems = calPredictedIndex[dateStr] || [];
+    const recordedItems = calRecordedIndex[dateStr] || [];
+    if (predictedItems.length === 0 && recordedItems.length === 0) {
       calDetail.classList.add('hidden');
       return;
     }
     calDetail.classList.remove('hidden');
-    calDetail.innerHTML = `
-      <h3>${formatDisplayDate(d)}の交換予定</h3>
-      <ul>${dueItems.map(i => `<li>${escapeHtml(i.name)}</li>`).join('')}</ul>
-    `;
+    const d = parseISODate(dateStr);
+    let html = `<h3>${formatDisplayDate(d)}</h3>`;
+    if (predictedItems.length > 0) {
+      html += `<p class="cal-detail-label">次回目安</p><ul>${predictedItems.map(i => `<li>${escapeHtml(i.name)}</li>`).join('')}</ul>`;
+    }
+    if (recordedItems.length > 0) {
+      html += `<p class="cal-detail-label">この日に記録</p><ul>${recordedItems.map(i => `<li>${escapeHtml(i.name)}</li>`).join('')}</ul>`;
+    }
+    calDetail.innerHTML = html;
   }
 
   // ---- Service Worker登録 ----
