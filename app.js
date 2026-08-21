@@ -141,21 +141,35 @@
       actions.className = 'item-actions';
 
       const recordBtn = document.createElement('button');
+      recordBtn.type = 'button';
       recordBtn.className = 'btn-replace';
-      recordBtn.textContent = '記録する';
+      recordBtn.textContent = '今日を記録';
       recordBtn.addEventListener('click', () => {
-        const t = formatISODate(todayDateOnly());
-        if (!item.records.includes(t)) item.records.push(t);
-        saveItems(items);
-        renderList();
+        recordDate(item, formatISODate(todayDateOnly()));
       });
 
+      const datePickWrapper = document.createElement('label');
+      datePickWrapper.className = 'date-pick-wrapper';
+      datePickWrapper.title = '日付を指定して記録';
+      datePickWrapper.setAttribute('aria-label', '日付を指定して記録');
+      datePickWrapper.textContent = '📅';
+      const datePickInput = document.createElement('input');
+      datePickInput.type = 'date';
+      datePickInput.max = formatISODate(todayDateOnly());
+      datePickInput.addEventListener('change', () => {
+        if (!datePickInput.value) return;
+        recordDate(item, datePickInput.value);
+        datePickInput.value = '';
+      });
+      datePickWrapper.appendChild(datePickInput);
+
       const editBtn = document.createElement('button');
+      editBtn.type = 'button';
       editBtn.className = 'btn-edit';
       editBtn.textContent = '編集';
       editBtn.addEventListener('click', () => openModal(item));
 
-      actions.append(recordBtn, editBtn);
+      actions.append(recordBtn, datePickWrapper, editBtn);
       li.append(main, actions);
       listEl.appendChild(li);
     }
@@ -165,6 +179,28 @@
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  // ---- トースト通知 ----
+  const toastEl = document.getElementById('toast');
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+  }
+
+  function recordDate(item, dateStr) {
+    if (item.records.includes(dateStr)) {
+      showToast(`${formatDisplayDate(parseISODate(dateStr))}はすでに記録済みです`);
+      return;
+    }
+    item.records.push(dateStr);
+    saveItems(items);
+    showToast(`${formatDisplayDate(parseISODate(dateStr))}を記録しました`);
+    renderList();
+    if (document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
   }
 
   // ---- モーダル(追加・編集) ----
