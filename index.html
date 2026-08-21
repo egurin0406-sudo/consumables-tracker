@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>消耗品トラッカー</title>
+<meta name="theme-color" content="#4F46E5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="消耗品">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>消耗品トラッカー</h1>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="list">一覧</button>
+    <button class="tab-btn" data-tab="calendar">カレンダー</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-list" class="tab-panel active">
+    <div id="empty-state" class="empty-state hidden">
+      <p>登録された消耗品はまだありません。</p>
+      <p>右下の + ボタンから追加しましょう。</p>
+    </div>
+    <ul id="item-list" class="item-list"></ul>
+  </section>
+
+  <section id="tab-calendar" class="tab-panel">
+    <div class="calendar-header">
+      <button id="cal-prev" aria-label="前の月">‹</button>
+      <h2 id="cal-title"></h2>
+      <button id="cal-next" aria-label="次の月">›</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+    </div>
+    <div id="calendar-grid" class="calendar-grid"></div>
+    <div id="cal-day-detail" class="cal-day-detail hidden"></div>
+  </section>
+</main>
+
+<button id="fab-add" class="fab" aria-label="追加">+</button>
+
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <h2 id="modal-title">消耗品を追加</h2>
+    <form id="item-form">
+      <label>
+        名前
+        <input type="text" id="f-name" required placeholder="例: コンタクトレンズ">
+      </label>
+
+      <label>
+        交換サイクル
+        <div class="cycle-presets">
+          <button type="button" class="preset-btn" data-days="7">1週間</button>
+          <button type="button" class="preset-btn" data-days="14">2週間</button>
+          <button type="button" class="preset-btn" data-days="30">1ヶ月</button>
+          <button type="button" class="preset-btn" data-days="90">3ヶ月</button>
+          <button type="button" class="preset-btn" data-days="180">6ヶ月</button>
+          <button type="button" class="preset-btn" data-days="365">1年</button>
+        </div>
+        <div class="custom-days">
+          <input type="number" id="f-cycle" min="1" required placeholder="日数">
+          <span>日ごと</span>
+        </div>
+      </label>
+
+      <label>
+        最終交換日
+        <input type="date" id="f-last-date" required>
+      </label>
+
+      <label>
+        メモ (任意)
+        <input type="text" id="f-note" placeholder="例: 右目用">
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" id="btn-delete" class="btn-danger hidden">削除</button>
+        <div class="modal-actions-right">
+          <button type="button" id="btn-cancel" class="btn-secondary">キャンセル</button>
+          <button type="submit" class="btn-primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
