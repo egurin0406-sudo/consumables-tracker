@@ -1,25 +1,23 @@
 (() => {
-  const STORAGE_KEY = 'consumables-v2';
+  const FIREBASE_CONFIG = {
+    projectId: 'consumables-tracker-18580',
+    appId: '1:472484220221:web:4e6c8a89618cc0dc0e8954',
+    storageBucket: 'consumables-tracker-18580.firebasestorage.app',
+    apiKey: 'AIzaSyBwV7QyoljasWRQ9y8SMogLLUAbkEKIzhs',
+    authDomain: 'consumables-tracker-18580.firebaseapp.com',
+    messagingSenderId: '472484220221',
+  };
+  const HOUSEHOLD_KEY = 'household-code-v1';
+  const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
   /** @typedef {{id:string, name:string, note:string, records:string[]}} Item */
 
-  /** @returns {Item[]} */
-  function loadItems() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveItems(items) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }
-
-  let items = loadItems();
+  let items = [];
   let editingId = null;
   let modalRecords = [];
+  let householdCode = localStorage.getItem(HOUSEHOLD_KEY);
+  let db = null;
+  let unsubscribeItems = null;
 
   // ---- 日付ユーティリティ ----
   function toDateOnly(d) {
@@ -91,6 +89,101 @@
     let s = `記録${count}件`;
     if (stats.avgCycle) s += `・平均${stats.avgCycle}日ごと`;
     return s;
+  }
+
+  // ---- 共有コード(Firestore同期) ----
+  const setupOverlay = document.getElementById('setup-overlay');
+  const btnCreateCode = document.getElementById('btn-create-code');
+  const joinCodeForm = document.getElementById('join-code-form');
+  const fJoinCode = document.getElementById('f-join-code');
+  const householdBadge = document.getElementById('btn-household');
+  const householdOverlay = document.getElementById('household-overlay');
+  const householdCodeDisplay = document.getElementById('household-code-display');
+  const btnCloseHousehold = document.getElementById('btn-close-household');
+  const btnChangeCode = document.getElementById('btn-change-code');
+
+  function generateCode(len = 6) {
+    let s = '';
+    for (let i = 0; i < len; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    return s;
+  }
+
+  function normalizeCode(v) {
+    return v.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  function startWithCode(code) {
+    householdCode = code;
+    localStorage.setItem(HOUSEHOLD_KEY, code);
+    setupOverlay.classList.add('hidden');
+    householdBadge.classList.remove('hidden');
+    householdBadge.textContent = `コード: ${code}`;
+    initFirestore();
+  }
+
+  btnCreateCode.addEventListener('click', () => {
+    startWithCode(generateCode());
+  });
+
+  joinCodeForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = normalizeCode(fJoinCode.value);
+    if (!code) return;
+    startWithCode(code);
+  });
+
+  householdBadge.addEventListener('click', () => {
+    householdCodeDisplay.textContent = householdCode;
+    householdOverlay.classList.remove('hidden');
+  });
+
+  btnCloseHousehold.addEventListener('click', () => {
+    householdOverlay.classList.add('hidden');
+  });
+
+  btnChangeCode.addEventListener('click', () => {
+    if (!confirm('コードを変更すると、今表示しているデータは見えなくなります。よろしいですか？')) return;
+    localStorage.removeItem(HOUSEHOLD_KEY);
+    location.reload();
+  });
+
+  function itemsCollection() {
+    return db.collection('households').doc(householdCode).collection('items');
+  }
+
+  function initFirestore() {
+    if (!db) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db = firebase.firestore();
+      db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    }
+    subscribeItems();
+  }
+
+  function subscribeItems() {
+    if (unsubscribeItems) unsubscribeItems();
+    unsubscribeItems = itemsCollection().onSnapshot(
+      (snap) => {
+        items = snap.docs.map((d) => {
+          const data = d.data();
+          return { id: d.id, name: data.name || '', note: data.note || '', records: data.records || [] };
+        });
+        renderList();
+        if (document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
+      },
+      (err) => {
+        console.error(err);
+        showToast('同期エラーが発生しました');
+      }
+    );
+  }
+
+  function persistItem(item) {
+    return itemsCollection().doc(item.id).set({ name: item.name, note: item.note, records: item.records });
+  }
+
+  function removeItemRemote(id) {
+    return itemsCollection().doc(id).delete();
   }
 
   // ---- タブ切り替え ----
@@ -196,11 +289,10 @@
       showToast(`${formatDisplayDate(parseISODate(dateStr))}はすでに記録済みです`);
       return;
     }
-    item.records.push(dateStr);
-    saveItems(items);
-    showToast(`${formatDisplayDate(parseISODate(dateStr))}を記録しました`);
-    renderList();
-    if (document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
+    const updated = { ...item, records: [...item.records, dateStr] };
+    persistItem(updated)
+      .then(() => showToast(`${formatDisplayDate(parseISODate(dateStr))}を記録しました`))
+      .catch(() => showToast('保存に失敗しました'));
   }
 
   // ---- モーダル(追加・編集) ----
@@ -281,33 +373,21 @@
     e.preventDefault();
     if (!fName.value.trim()) return;
 
-    if (editingId) {
-      const item = items.find(i => i.id === editingId);
-      item.name = fName.value.trim();
-      item.note = fNote.value.trim();
-      item.records = [...modalRecords];
-    } else {
-      items.push({
-        id: crypto.randomUUID(),
-        name: fName.value.trim(),
-        note: fNote.value.trim(),
-        records: [...modalRecords],
-      });
-    }
-    saveItems(items);
+    const item = {
+      id: editingId || crypto.randomUUID(),
+      name: fName.value.trim(),
+      note: fNote.value.trim(),
+      records: [...modalRecords],
+    };
+    persistItem(item).catch(() => showToast('保存に失敗しました'));
     closeModal();
-    renderList();
-    renderCalendar();
   });
 
   deleteBtn.addEventListener('click', () => {
     if (!editingId) return;
     if (!confirm('この消耗品を削除しますか？')) return;
-    items = items.filter(i => i.id !== editingId);
-    saveItems(items);
+    removeItemRemote(editingId).catch(() => showToast('削除に失敗しました'));
     closeModal();
-    renderList();
-    renderCalendar();
   });
 
   // ---- カレンダー描画 ----
@@ -424,5 +504,12 @@
     });
   }
 
+  // ---- 初期化 ----
+  if (householdCode) {
+    setupOverlay.classList.add('hidden');
+    householdBadge.classList.remove('hidden');
+    householdBadge.textContent = `コード: ${householdCode}`;
+    initFirestore();
+  }
   renderList();
 })();

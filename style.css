@@ -30,10 +30,30 @@ body {
   z-index: 10;
 }
 
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .app-header h1 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 1.25rem;
 }
+
+.household-badge {
+  background: rgba(255,255,255,0.18);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.household-badge.hidden { display: none; }
 
 .tabs {
   display: flex;
@@ -359,6 +379,47 @@ main {
   cursor: pointer;
 }
 .btn-danger.hidden { display: none; }
+
+.setup-desc {
+  color: var(--text-sub);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.setup-create-btn {
+  width: 100%;
+}
+
+.setup-divider {
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 0.8rem;
+  margin: 16px 0;
+}
+
+.setup-join-btn {
+  width: 100%;
+}
+
+#join-code-form input {
+  text-transform: uppercase;
+}
+
+.household-code-display {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 12px 0 20px;
+  color: var(--indigo);
+}
+
+.household-modal-actions {
+  justify-content: flex-end;
+}
 
 .calendar-header {
   display: flex;
