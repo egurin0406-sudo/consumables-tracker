@@ -10,7 +10,7 @@
   const HOUSEHOLD_KEY = 'household-code-v1';
   const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
-  /** @typedef {{id:string, name:string, note:string, records:string[]}} Item */
+  /** @typedef {{id:string, name:string, category:string, note:string, records:string[]}} Item */
 
   let items = [];
   let editingId = null;
@@ -166,7 +166,7 @@
       (snap) => {
         items = snap.docs.map((d) => {
           const data = d.data();
-          return { id: d.id, name: data.name || '', note: data.note || '', records: data.records || [] };
+          return { id: d.id, name: data.name || '', category: data.category || '', note: data.note || '', records: data.records || [] };
         });
         renderList();
         if (document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
@@ -179,7 +179,7 @@
   }
 
   function persistItem(item) {
-    return itemsCollection().doc(item.id).set({ name: item.name, note: item.note, records: item.records });
+    return itemsCollection().doc(item.id).set({ name: item.name, category: item.category, note: item.note, records: item.records });
   }
 
   function removeItemRemote(id) {
@@ -217,9 +217,28 @@
     listEl.innerHTML = '';
     emptyStateEl.classList.toggle('hidden', items.length > 0);
 
-    for (const { item, stats } of withStats) {
+    const groups = new Map();
+    for (const entry of withStats) {
+      const cat = entry.item.category || '未分類';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(entry);
+    }
+
+    for (const [category, entries] of groups) {
+      const header = document.createElement('div');
+      header.className = 'category-header';
+      header.textContent = category;
+      listEl.appendChild(header);
+
+      for (const { item, stats } of entries) {
+        listEl.appendChild(renderItemCard(item, stats));
+      }
+    }
+  }
+
+  function renderItemCard(item, stats) {
       const status = statusOf(stats);
-      const li = document.createElement('li');
+      const li = document.createElement('div');
       li.className = `item-card status-${status}`;
 
       const main = document.createElement('div');
@@ -264,8 +283,7 @@
 
       actions.append(recordBtn, datePickWrapper, editBtn);
       li.append(main, actions);
-      listEl.appendChild(li);
-    }
+      return li;
   }
 
   function escapeHtml(s) {
@@ -299,6 +317,8 @@
   const modalOverlay = document.getElementById('modal-overlay');
   const modalTitle = document.getElementById('modal-title');
   const itemForm = document.getElementById('item-form');
+  const fCategory = document.getElementById('f-category');
+  const categoryOptionsEl = document.getElementById('category-options');
   const fName = document.getElementById('f-name');
   const fNote = document.getElementById('f-note');
   const recordsListEl = document.getElementById('records-list');
@@ -338,10 +358,14 @@
   function openModal(item) {
     editingId = item ? item.id : null;
     modalTitle.textContent = item ? '消耗品を編集' : '消耗品を追加';
+    const categories = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+    categoryOptionsEl.innerHTML = categories.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    fCategory.value = item ? item.category || '' : '';
     fName.value = item ? item.name : '';
     fNote.value = item ? item.note || '' : '';
     modalRecords = item ? [...item.records] : [formatISODate(todayDateOnly())];
     fNewRecordDate.value = formatISODate(todayDateOnly());
+    fNewRecordDate.max = formatISODate(todayDateOnly());
     deleteBtn.classList.toggle('hidden', !item);
     renderModalRecords();
     modalOverlay.classList.remove('hidden');
@@ -363,6 +387,10 @@
 
   btnAddRecord.addEventListener('click', () => {
     const val = fNewRecordDate.value || formatISODate(todayDateOnly());
+    if (val > formatISODate(todayDateOnly())) {
+      showToast('未来の日付は記録できません');
+      return;
+    }
     if (!modalRecords.includes(val)) {
       modalRecords.push(val);
       renderModalRecords();
@@ -376,6 +404,7 @@
     const item = {
       id: editingId || crypto.randomUUID(),
       name: fName.value.trim(),
+      category: fCategory.value.trim(),
       note: fNote.value.trim(),
       records: [...modalRecords],
     };

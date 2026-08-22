@@ -30,7 +30,7 @@
       <p>登録された消耗品はまだありません。</p>
       <p>右下の + ボタンから追加しましょう。</p>
     </div>
-    <ul id="item-list" class="item-list"></ul>
+    <div id="item-list" class="item-list"></div>
   </section>
 
   <section id="tab-calendar" class="tab-panel">
@@ -53,6 +53,12 @@
   <div class="modal">
     <h2 id="modal-title">消耗品を追加</h2>
     <form id="item-form">
+      <label>
+        カテゴリ (任意)
+        <input type="text" id="f-category" list="category-options">
+        <datalist id="category-options"></datalist>
+      </label>
+
       <label>
         名前
         <input type="text" id="f-name" required>
